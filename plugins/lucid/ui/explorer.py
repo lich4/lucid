@@ -39,13 +39,11 @@ class MicrocodeExplorer(object):
         self.view = MicrocodeExplorerView(self, self.model)
         self.view._code_sync.enable_sync(True) # XXX/HACK
 
-    def show(self, address=None):
+    def show(self, addr_range):
         """
         Show the microcode explorer.
         """
-        if address is None:
-            address = ida_kernwin.get_screen_ea()
-        self.select_function(address)
+        self.select_function(addr_range)
         self.view.show()
 
     def show_subtree(self, insn_token):
@@ -85,19 +83,15 @@ class MicrocodeExplorer(object):
     # View Controls
     #-------------------------------------------------------------------------
 
-    def select_function(self, address):
+    def select_function(self, addr_range):
         """
         Switch the microcode view to the specified function.
         """
-        func = ida_funcs.get_func(address)
-        if not func:
-            return False
-        
-        for maturity in get_mmat_levels():
-            mba = get_microcode(func, maturity)
-            mtext = MicrocodeText(mba, self.model.verbose)
-            self.model.update_mtext(mtext, maturity)
-
+        if addr_range[1] == 0: # function
+            func = ida_funcs.get_func(addr_range[0])
+            if not func:
+                return False
+        self.model.reset_mtext(addr_range)
         self.view.refresh()
         ida_kernwin.refresh_idaview_anyway()
         return True
@@ -113,10 +107,12 @@ class MicrocodeExplorer(object):
         """
         Select a token in the microcode view matching the given address.
         """
+        if self.model.mtext is None:
+            return None
         tokens = self.model.mtext.get_tokens_for_address(address)
         if not tokens:
             return None
-
+        
         token_line_num, token_x = self.model.mtext.get_pos_of_token(tokens[0])
         rel_y = self.model.current_position[2]
 
@@ -139,6 +135,9 @@ class MicrocodeExplorer(object):
         """
         Activate (eg. double click) the given text position in the microcode view.
         """
+        if self.model.mtext is None:
+            return None
+            
         token = self.model.mtext.get_token_at_position(line_num, x)
 
         if isinstance(token, AddressToken):
@@ -192,7 +191,7 @@ class MicrocodeExplorerModel(object):
         # microcode view, and which cursor will be used
         #
 
-        self._active_maturity = ida_hexrays.MMAT_GENERATED
+        self._active_maturity = ida_hexrays.MMAT_LOCOPT
 
         # this flag tracks the verbosity toggle state
         self._verbose = False
@@ -204,17 +203,48 @@ class MicrocodeExplorerModel(object):
         self._mtext_refreshed_callbacks = []
         self._position_changed_callbacks = []
         self._maturity_changed_callbacks = []
+
+        self._mba_cache = dict()
+        self._addr_range = None
     
     #-------------------------------------------------------------------------
     # Read-Only Properties
     #-------------------------------------------------------------------------
+
+    def get_cache_mba(self, addr_range, maturity):
+        mba_id = f"{addr_range[0]:08x}-{addr_range[1]:08x}:{maturity}"
+        if mba_id not in self._mba_cache:
+            mba = get_microcode(addr_range, maturity)
+            self._mba_cache[mba_id] = mba
+        return self._mba_cache[mba_id]
+    
+    def refresh_microcode(self):
+        self._mba_cache = dict()
+        pass
+    
+    def get_mtext(self, maturity):
+        if self._mtext[maturity] is None:
+            mba = self.get_cache_mba(self._addr_range, maturity)
+            if mba is None:
+                return None
+            mtext = MicrocodeText(mba, self.verbose)
+            self._mtext[maturity] = mtext
+            self._view_cursors[maturity] = ViewCursor(0, 0, 0)
+        return self._mtext[maturity]
+
+    def reset_mtext(self, addr_range):
+        self._addr_range = addr_range
+        self._mtext = {x: None for x in get_mmat_levels()}
+        self._view_cursors = {x: None for x in get_mmat_levels()}
 
     @property
     def mtext(self):
         """
         Return the microcode text mapping for the current maturity level.
         """
-        return self._mtext[self._active_maturity]
+        if self._addr_range is None:
+            return None
+        return self.get_mtext(self._active_maturity)
 
     @property
     def current_line(self):
@@ -240,6 +270,8 @@ class MicrocodeExplorerModel(object):
         """
         Return the token at the current viewport cursor position.
         """
+        if self.mtext is None:
+            return None
         return self.mtext.get_token_at_position(*self.current_position[:2])
     
     @property
@@ -247,6 +279,8 @@ class MicrocodeExplorerModel(object):
         """
         Return the address at the current viewport cursor position.
         """
+        if self.mtext is None:
+            return None
         return self.mtext.get_address_at_position(*self.current_position[:2])
 
     @property
@@ -352,6 +386,8 @@ class MicrocodeExplorerModel(object):
         line_num, x, y = position 
         self._view_cursors[mmat_src] = ViewCursor(line_num, x, y, True)
 
+        # The following code cause too much calling to get_microcode
+        """
         # map the cursor backwards from the source maturity
         mmat_lower = range(mmat_first, mmat_src)[::-1]
         current_maturity = mmat_src
@@ -365,6 +401,7 @@ class MicrocodeExplorerModel(object):
         for next_maturity in mmat_higher:
             self._transfer_cursor(current_maturity, next_maturity)
             current_maturity = next_maturity
+        """
 
     def _transfer_cursor(self, mmat_src, mmat_dst):
         """
@@ -374,12 +411,12 @@ class MicrocodeExplorerModel(object):
         mapped = self._view_cursors[mmat_src].mapped
 
         # attempt to translate the position in one mtext to another
-        projection = translate_mtext_position(position, self._mtext[mmat_src], self._mtext[mmat_dst])
+        projection = translate_mtext_position(position, self.get_mtext(mmat_src), self.get_mtext(mmat_dst))
 
         # if translation failed, we will generate an approximate cursor
         if not projection:
             mapped = False
-            projection = remap_mtext_position(position, self._mtext[mmat_src], self._mtext[mmat_dst])
+            projection = remap_mtext_position(position, self.get_mtext(mmat_src), self.get_mtext(mmat_dst))
 
         # save the generated cursor
         line_num, x, y = projection
@@ -648,6 +685,8 @@ class MicrocodeView(ida_kernwin.simplecustviewer_t):
 
     def refresh(self):
         self.ClearLines()
+        if self.model.mtext is None:
+            return
         for line in self.model.mtext.lines:
             self.AddLine(line.tagged_text)
         self.refresh_cursor()
@@ -709,30 +748,36 @@ class MicrocodeView(ida_kernwin.simplecustviewer_t):
         qmenu.installEventFilter(self.filter)
 
         # only handle right clicks on lines containing micro instructions
+        if self.model.mtext is None:
+            return False
         ins_token = self.model.mtext.get_ins_for_line(self.model.current_line)
         if not ins_token:
             return False
+        
         class ViewHandler(ida_kernwin.action_handler_t):
             def activate(self, ctx):
                 controller.show_subtree(ins_token)
+
             def update(self, ctx):
                 return ida_kernwin.AST_ENABLE_ALWAYS
             
         import pyperclip
-        lines = self.model.mtext.lines
+        model = self.model
+
         class CopyHandler(ida_kernwin.action_handler_t):
             def activate(self, ctx):
+                lines = model.mtext.lines
                 pyperclip.copy("\n".join([line.text for line in lines]))
                 print("done")
+
             def update(self, ctx):
                 return ida_kernwin.AST_ENABLE_ALWAYS
-
+        
         # inject the 'View subtree' action into the right click context menu
         desc1 = ida_kernwin.action_desc_t(None, 'View subtree', ViewHandler())
         desc2 = ida_kernwin.action_desc_t(None, 'Copy microcode', CopyHandler())
         ida_kernwin.attach_dynamic_action_to_popup(form, popup_handle, desc1, None)
         ida_kernwin.attach_dynamic_action_to_popup(form, popup_handle, desc2, None)
-        
         return True
 
 #-----------------------------------------------------------------------------

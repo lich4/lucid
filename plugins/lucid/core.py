@@ -67,7 +67,7 @@ class LucidCore(object):
 
         # initialize the the plugin integrations
         self._init_action_view_microcode()
-        self._install_hexrays_hooks()
+        self._install_ida_hooks()
 
         # all done, mark the core as loaded
         self.loaded = True
@@ -89,7 +89,7 @@ class LucidCore(object):
         # mark the core as 'unloaded' and teardown its components
         self.loaded = False
 
-        self._remove_hexrays_hooks()
+        self._remove_ida_hooks()
         self._del_action_view_microcode()
 
     #--------------------------------------------------------------------------
@@ -100,23 +100,28 @@ class LucidCore(object):
         """
         Open the Microcode Explorer window.
         """
-        current_address = ida_kernwin.get_screen_ea()
-        if current_address == ida_idaapi.BADADDR:
-            print("Could not open Microcode Explorer (bad cursor address)")
-            return
-
+        v = ida_kernwin.get_current_viewer()
+        is_sel, start_ea, end_ea = ida_kernwin.read_range_selection(v)
+        if is_sel:
+            addr_range = [start_ea, end_ea]
+        else:
+            cur_addr =  ida_kernwin.get_screen_ea()
+            if cur_addr == ida_idaapi.BADADDR:
+                print("Could not open Microcode Explorer (bad cursor address)")
+                return
+            addr_range = [cur_addr, 0]
         #
         # if the microcode window is open & visible, we should just refresh
         # it but at the current IDA cursor address
         #
 
         if self.explorer and self.explorer.view.visible:
-            self.explorer.select_function(current_address)
+            self.explorer.select_function(addr_range)
             return
 
         # no microcode window in use, create a new one and show it
         self.explorer = MicrocodeExplorer()
-        self.explorer.show(current_address)
+        self.explorer.show(addr_range)
 
     #--------------------------------------------------------------------------
     # Action Registration
@@ -152,7 +157,7 @@ class LucidCore(object):
     # Hex-Rays Hooking
     #--------------------------------------------------------------------------
 
-    def _install_hexrays_hooks(self):
+    def _install_ida_hooks(self):
         """
         Install the Hex-Rays hooks used by the plugin core.
         """
@@ -166,12 +171,22 @@ class LucidCore(object):
         self._hxe_hooks = CoreHxeHooks()
         self._hxe_hooks.hook()
 
-    def _remove_hexrays_hooks(self):
+        class DisasmHooks(ida_kernwin.UI_Hooks):
+            def finish_populating_widget_popup(_, widget, popup):
+                if ida_kernwin.get_widget_type(widget) == ida_kernwin.BWN_DISASM:
+                    self._hxe_popuplating_popup(widget, popup, None)
+        
+        self._ui_hooks = DisasmHooks()
+        self._ui_hooks.hook()
+
+    def _remove_ida_hooks(self):
         """
         Remove the Hex-Rays hooks used by the plugin core.
         """
         self._hxe_hooks.unhook()
         self._hxe_hooks = None
+        self._ui_hooks.unhook()
+        self._ui_hooks = None
 
     def _hxe_popuplating_popup(self, widget, popup, vdui):
         """
@@ -205,7 +220,7 @@ class LucidCore(object):
         for address in list(idautils.Functions()):
          
             print("0x%08X: DECOMPILING" % address)
-            self.explorer.select_function(address)
+            self.explorer.select_function([address, 0])
             self.explorer.view.refresh()
 
             # change the codeview to a starting maturity levels

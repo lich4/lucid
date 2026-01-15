@@ -1,20 +1,28 @@
 import ida_lines
 import ida_idaapi
+import ida_funcs
 import ida_kernwin
 import ida_hexrays
-
+import ida_range
 #-----------------------------------------------------------------------------
 # Hex-Rays Util
 #-----------------------------------------------------------------------------
 
-def get_microcode(func, maturity):
+def get_microcode(addr_range, maturity):
     """
     Return the mba_t of the given function at the specified maturity.
     """
-    mbr = ida_hexrays.mba_ranges_t(func)
+    if addr_range[1] == 0:
+        func = ida_funcs.get_func(addr_range[0])
+        mbr = ida_hexrays.mba_ranges_t(func)
+        ida_hexrays.mark_cfunc_dirty(func.start_ea)
+    else:
+        rv = ida_range.rangevec_t()
+        rv.push_back(ida_range.range_t(addr_range[0], addr_range[1]))
+        mbr = ida_hexrays.mba_ranges_t(None)   # snippet 模式：pfn=None
+        mbr.ranges = rv
     hf = ida_hexrays.hexrays_failure_t()
     ml = ida_hexrays.mlist_t()
-    ida_hexrays.mark_cfunc_dirty(func.start_ea)
     mba = ida_hexrays.gen_microcode(mbr, hf, ml, ida_hexrays.DECOMP_NO_WAIT, maturity)
     if not mba:
         print("0x%08X: %s" % (hf.errea, hf.desc()))

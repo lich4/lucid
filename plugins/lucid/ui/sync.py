@@ -316,5 +316,5 @@ class MicroCursorHighlight(object):
         """
         TODO: this probably should just be a func in the controller
         """
-        self.controller.select_function(vdui.cfunc.entry_ea)
+        self.controller.select_function([vdui.cfunc.entry_ea, 0])
         self.controller.view.refresh()
