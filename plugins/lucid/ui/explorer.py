@@ -299,6 +299,8 @@ class MicrocodeExplorerModel(object):
         """
         Return the current viewport cursor position (line_num, view_x, view_y).
         """
+        if self.current_cursor is None:
+            return None
         return self.current_cursor.viewport_position
 
     @current_position.setter
