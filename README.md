@@ -16,3 +16,5 @@ Some changes:
 * 4. "Disassembly"窗口的右键菜单增加"View microcode"项 
 * 5. 在"Disassembly"窗口选择了地址范围的情况下, 可以获取这段代码的Microcode而不是整个函数的microcode
 
+![lucid](https://raw.githubusercontent.com/lich4/lucid/refs/heads/master/screenshots/new_lucid.png)
+
