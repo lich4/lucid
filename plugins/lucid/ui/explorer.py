@@ -375,7 +375,8 @@ class MicrocodeExplorerModel(object):
                 self._mtext[maturity] = new_mtext
                 self.current_position = translate_mtext_position(self.current_position, mtext, new_mtext)
                 continue
-            mtext.refresh(self.verbose)
+            if mtext is not None:
+                mtext.refresh(self.verbose)
         self._notify_mtext_refreshed()
 
     def _gen_cursors(self, position, mmat_src):

@@ -208,8 +208,7 @@ class InstructionCommentToken(TextToken):
         """
         Populate this object from a given minsn_t.
         """
-        addr_cmt = ida_bytes.get_cmt(insn.ea, False) or "" # added by lich4
-        items = [TextCell(f"; {addr_cmt}")] # added by lich4
+        items = [TextCell(f"; ")]
 
         # append the instruction address
         #items.append(AddressToken(insn.ea))
@@ -218,6 +217,11 @@ class InstructionCommentToken(TextToken):
         if usedef:
             use_def_tokens = self._generate_use_def(blk, insn)
             items.extend(use_def_tokens)
+
+        # append the comment
+        addr_cmt = ida_bytes.get_cmt(insn.ea, False) or ""
+        if addr_cmt:
+            items.append(TextCell(f"{addr_cmt}"))
 
         # (re-)parent orphan tokens to this line
         for item in items:
