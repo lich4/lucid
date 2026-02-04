@@ -1,6 +1,7 @@
 import ida_lines
 import ida_idaapi
 import ida_hexrays
+import ida_bytes
 
 from lucid.text import TextCell, TextToken, TextLine, TextBlock
 from lucid.util.ida import tag_text
@@ -60,8 +61,8 @@ class LinePrefixToken(TextCell):
     A token to display the relative position of a minsn_t within an mblock_t.
     """
 
-    def __init__(self, blk_idx, insn_idx, parent=None):
-        prefix_text = "%d.%2d " % (blk_idx, insn_idx)
+    def __init__(self, blk_idx, insn_idx, insn_addr, parent=None):
+        prefix_text = f"{insn_addr:08x}  {blk_idx}.{insn_idx:2d} "
         tagged_text = tag_text(prefix_text, ida_lines.COLOR_PREFIX)
         super(LinePrefixToken, self).__init__(tagged_text, parent=parent)
 
@@ -207,10 +208,11 @@ class InstructionCommentToken(TextToken):
         """
         Populate this object from a given minsn_t.
         """
-        items = [TextCell("; ")]
+        addr_cmt = ida_bytes.get_cmt(insn.ea, False) or "" # added by lich4
+        items = [TextCell(f"; {addr_cmt}")] # added by lich4
 
         # append the instruction address
-        items.append(AddressToken(insn.ea))
+        #items.append(AddressToken(insn.ea))
 
         # append the use/def list
         if usedef:
@@ -401,7 +403,8 @@ class MicroBlockText(TextBlock):
         """
         Generate a block/index prefixed line for a given instruction token.
         """
-        prefix_token = LinePrefixToken(self.blk.serial, idx)
+        insn_addr = self.instructions[idx].address
+        prefix_token = LinePrefixToken(self.blk.serial, idx, insn_addr)
         cmt_token = InstructionCommentToken(self.blk, ins_token.insn, self.verbose)
 
         cmt_padding = max(50 - (len(prefix_token.text) + len(ins_token.text)), 1)
@@ -411,7 +414,7 @@ class MicroBlockText(TextBlock):
         line_token = TextLine(items=[prefix_token, ins_token, padding_token, cmt_token], parent=self)
 
         # give the line token the address of the associated instruction index
-        line_token.address = self.instructions[idx].address
+        line_token.address = insn_addr
 
         # return the completed instruction line token
         return line_token

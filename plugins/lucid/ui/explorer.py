@@ -6,6 +6,7 @@ import ida_graph
 import ida_idaapi
 import ida_kernwin
 import ida_hexrays
+import ida_bytes
 
 from PyQt5 import QtWidgets, QtGui, QtCore, sip
 
@@ -14,6 +15,8 @@ from lucid.ui.subtree import MicroSubtreeView
 from lucid.util.python import register_callback, notify_callback
 from lucid.util.hexrays import get_microcode, get_mmat, get_mmat_name, get_mmat_levels 
 from lucid.microtext import MicrocodeText, MicroInstructionToken, MicroOperandToken, AddressToken, BlockNumberToken, translate_mtext_position, remap_mtext_position
+
+import pyperclip
 
 #------------------------------------------------------------------------------
 # Microcode Explorer
@@ -213,6 +216,7 @@ class MicrocodeExplorerModel(object):
 
     def get_cache_mba(self, addr_range, maturity):
         mba_id = f"{addr_range[0]:08x}-{addr_range[1]:08x}:{maturity}"
+        print(f"get mba for {mba_id}")
         if mba_id not in self._mba_cache:
             mba = get_microcode(addr_range, maturity)
             self._mba_cache[mba_id] = mba
@@ -686,6 +690,7 @@ class MicrocodeView(ida_kernwin.simplecustviewer_t):
         self.model.position_changed(self.refresh_cursor)
 
     def refresh(self):
+        print("MicrocodeView::refresh")
         self.ClearLines()
         if self.model.mtext is None:
             return
@@ -750,36 +755,53 @@ class MicrocodeView(ida_kernwin.simplecustviewer_t):
         qmenu.installEventFilter(self.filter)
 
         # only handle right clicks on lines containing micro instructions
-        if self.model.mtext is None:
+        view = self
+        mtext = self.model.mtext
+        current_line = self.model.current_line
+        if mtext is None:
             return False
-        ins_token = self.model.mtext.get_ins_for_line(self.model.current_line)
+        ins_token = mtext.get_ins_for_line(current_line)
         if not ins_token:
             return False
         
         class ViewHandler(ida_kernwin.action_handler_t):
             def activate(self, ctx):
                 controller.show_subtree(ins_token)
-
-            def update(self, ctx):
-                return ida_kernwin.AST_ENABLE_ALWAYS
-            
-        import pyperclip
-        model = self.model
-
-        class CopyHandler(ida_kernwin.action_handler_t):
-            def activate(self, ctx):
-                lines = model.mtext.lines
-                pyperclip.copy("\n".join([line.text for line in lines]))
-                print("done")
+                return 1
 
             def update(self, ctx):
                 return ida_kernwin.AST_ENABLE_ALWAYS
         
+        class CopyHandler(ida_kernwin.action_handler_t):
+            def activate(self, ctx):
+                lines = mtext.lines
+                pyperclip.copy("\n".join([line.text for line in lines]))
+                return 1
+
+            def update(self, ctx):
+                return ida_kernwin.AST_ENABLE_ALWAYS
+        
+        class CommentHandler(ida_kernwin.action_handler_t):
+            def activate(self, ctx):
+                ea = ins_token.insn.ea
+                orig_cmt = ida_bytes.get_cmt(ea, False) or ""
+                cmt = ida_kernwin.ask_text(0, orig_cmt, "Enter comment")
+                if cmt is not None:
+                    ida_bytes.set_cmt(ea, cmt, False)
+                    mtext.refresh()
+                    view.refresh()
+                return 1
+
+            def update(self, ctx):
+                return ida_kernwin.AST_ENABLE_ALWAYS
+
         # inject the 'View subtree' action into the right click context menu
         desc1 = ida_kernwin.action_desc_t(None, 'View subtree', ViewHandler())
         desc2 = ida_kernwin.action_desc_t(None, 'Copy microcode', CopyHandler())
+        desc3 = ida_kernwin.action_desc_t(None, 'Enter comment...', CommentHandler())
         ida_kernwin.attach_dynamic_action_to_popup(form, popup_handle, desc1, None)
         ida_kernwin.attach_dynamic_action_to_popup(form, popup_handle, desc2, None)
+        ida_kernwin.attach_dynamic_action_to_popup(form, popup_handle, desc3, None)
         return True
 
 #-----------------------------------------------------------------------------
