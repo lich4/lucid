@@ -117,12 +117,11 @@ class MicrocodeExplorer(object):
             return None
         
         token_line_num, token_x = self.model.mtext.get_pos_of_token(tokens[0])
-        rel_y = self.model.current_position[2]
-
-        if self.model.current_position[2] == 0:
-            rel_y = 30
-
-        self.model.current_position = (token_line_num, token_x, rel_y)
+        if self.model.current_position:
+            rel_y = self.model.current_position[2]
+            if self.model.current_position[2] == 0:
+                rel_y = 30
+            self.model.current_position = (token_line_num, token_x, rel_y)
         return tokens[0]
 
     def select_position(self, line_num, x, y):

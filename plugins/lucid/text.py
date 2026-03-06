@@ -87,9 +87,11 @@ class TextToken(TextCell):
         """
         token_ranges = []
         parsing_offset = 0
-
+        
         for token in self.items:
-            token_index = self.text[parsing_offset:].index(token.text)
+            token_index = self.text[parsing_offset:].find(token.text)
+            if token_index == -1:
+                continue
             token_start = parsing_offset + token_index
             token_end = token_start + len(token.text)
             token_ranges.append((range(token_start, token_end), token))

@@ -248,7 +248,10 @@ class MicroCursorHighlight(object):
         Highlight the IDA viewer line numbers specified in to_paint.
         """
         assert len(lines_in.sections_lines) == 1, "Simpleviews should only have one section!?"
-        color = ida_kernwin.CK_EXTRA1 if self.model.current_cursor.mapped else 0x400000FF
+        if self.model.current_cursor and self.model.current_cursor.mapped:
+            color = ida_kernwin.CK_EXTRA1
+        else:
+            color = 0x400000FF
         for line in lines_in.sections_lines[0]:
             splace = ida_kernwin.place_t_as_simpleline_place_t(line.at)
             if splace.n in to_paint:
