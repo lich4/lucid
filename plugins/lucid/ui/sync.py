@@ -217,6 +217,8 @@ class MicroCursorHighlight(object):
         Return the active addresses (current line) from the given vdui.
         """
         address_map = self._get_vdui_address_map(vdui)
+        if vdui.cpos.lnnum not in address_map:
+            return None
         return address_map[vdui.cpos.lnnum]
 
     def _get_vdui_address_map(self, vdui):
